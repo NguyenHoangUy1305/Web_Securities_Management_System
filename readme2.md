@@ -1,0 +1,1 @@
+vẫn ko thấy vụ cài đặt theme settings

@@ -1,0 +1,103 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: securities-api
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - DB_CONNECTION=sqlsrv
+      - DB_HOST=sqlserver
+      - DB_PORT=1433
+      - DB_DATABASE=securities_db
+      - DB_USERNAME=sa
+      - DB_PASSWORD=Securities@2024
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./backend:/var/www
+    networks:
+      - securities-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: securities-web
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - securities-network
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: securities-db
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=Securities@2024
+      - MSSQL_PID=Developer
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "Securities@2024" -C -Q "SELECT 1" || exit 1
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - securities-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: securities-cache
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - securities-network
+
+  queue-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: securities-queue
+    command: php artisan queue:work --tries=3 --timeout=90
+    environment:
+      - APP_ENV=production
+      - DB_CONNECTION=sqlsrv
+      - DB_HOST=sqlserver
+      - DB_PORT=1433
+      - DB_DATABASE=securities_db
+      - DB_USERNAME=sa
+      - DB_PASSWORD=Securities@2024
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - ./backend:/var/www
+    networks:
+      - securities-network
+
+volumes:
+  sqlserver-data:
+  redis-data:
+
+networks:
+  securities-network:
+    driver: bridge
